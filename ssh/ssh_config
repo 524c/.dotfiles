@@ -1,0 +1,11 @@
+Host *
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+  IgnoreUnknown UseKeychain
+  StrictHostKeyChecking no
+  SendEnv SessionID
+  AddKeysToAgent yes
+  ForwardAgent yes
+  ControlPath ~/.ssh/.sockets/%r_%h_%p
+  ControlMaster auto
+  ControlPersist 10m
