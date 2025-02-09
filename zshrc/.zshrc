@@ -1,3 +1,7 @@
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
 # zsh
 autoload -Uz compinit && compinit
 setopt nocorrectall
@@ -23,13 +27,14 @@ zstyle ':omz:update' frequency 13
 
 # K8S
 export KUBECONFIG=~/.kube/config
-alias k="kubectl"
+alias k="kubecolor"
 alias kg="kubectl get"
 alias kd="kubectl describe"
 alias kdel="kubectl delete"
 alias kl="kubectl logs"
 alias kgpo="kubectl get pod"
 alias kgd="kubectl get deployments"
+alias kgst="kubectl get statefulset"
 alias kc="kubectx"
 alias kns="kubens"
 alias kl="kubectl logs -f"
@@ -83,7 +88,47 @@ alias pip='pip3'
 alias py='python3'
 alias python='python3'
 
+# .oh-my-zsh
+plugins=(
+git
+zsh-syntax-highlighting
+zsh-autosuggestions
+)
+
+source $ZSH/oh-my-zsh.sh
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
 # misc
+function myips() {
+	SHOW_IPV6=0
+  if [[ "$1" == "--ipv6" ]] || [[ "$1" == "-6" ]]; then
+	SHOW_IPV6=1
+  fi
+
+  for iface in $(ifconfig -l); do
+	[[ $iface == "lo"* ]] && continue
+
+    ipv4=$(ifconfig "$iface" | grep 'inet ' | awk '{print $2}')
+
+    if [[ -n $ipv4 ]]; then
+      echo "$iface (IPv4): $ipv4"
+    fi
+
+    if [[ $MYIPS_ONLY_IPV4 -eq 1 ]] && [[ $SHOW_IPV6 -eq 0 ]]; then
+      continue
+	fi
+
+	ipv6=$(ifconfig "$iface" | grep 'inet6 ' | awk '{printf "%s ", $2}')
+    if [[ -n $ipv6 ]]; then
+      echo "$iface (IPv6): ${ipv6% }"
+    fi
+  done
+
+  echo "public ip: $(extip)"
+}
+
+export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/opt/homebrew/opt/util-linux/bin:/opt/homebrew/opt/util-linux/sbin:/opt/homebrew/opt/curl/bin:$PATH
+
 alias ls='lsd --group-dirs first'
 alias l='lsd -ltr --group-dirs first'
 alias ll='lsd -lh --group-dirs first'
@@ -98,42 +143,11 @@ alias awk=gawk
 alias which=gwhich
 alias grep='/opt/homebrew/bin/ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.idea,.tox}'
 alias egrep='/opt/homebrew/bin/ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.idea,.tox}'
+alias extip='dig +time=1 +short @resolver1.opendns.com myip.opendns.com 2>/dev/null || curl ipinfo.io/ip'
 
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export EDITOR='vim'
 export GPG_TTY=$(tty)
-alias extip='dig +time=1 +short @resolver1.opendns.com myip.opendns.com 2>/dev/null || curl ipinfo.io/ip'
-
-# functions
-function myips() {
-	SHOW_IPV6=0
-  if [[ "$1" == "--ipv6" ]] || [[ "$1" == "-6" ]]; then
-	SHOW_IPV6=1
-  fi
-
-  for iface in $(ifconfig -l); do
-	[[ $iface == "lo"* ]] && continue
-
-    ipv4=$(ifconfig "$iface" | grep 'inet ' | awk '{print $2}')
-  
-    if [[ -n $ipv4 ]]; then
-      echo "$iface (IPv4): $ipv4"
-    fi
-  
-    if [[ $MYIPS_ONLY_IPV4 -eq 1 ]] && [[ $SHOW_IPV6 -eq 0 ]]; then
-      continue
-	fi
-
-	ipv6=$(ifconfig "$iface" | grep 'inet6 ' | awk '{printf "%s ", $2}')  
-    if [[ -n $ipv6 ]]; then
-      echo "$iface (IPv6): ${ipv6% }"
-    fi
-  done
-  
-  echo "public ip: $(extip)"
-}
-
-export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/opt/homebrew/opt/util-linux/bin:/opt/homebrew/opt/util-linux/sbin:/opt/homebrew/opt/curl/bin:$PATH
 
 source ~/.dotfiles/zsh/custom.zsh
