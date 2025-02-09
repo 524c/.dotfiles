@@ -63,23 +63,19 @@ function setup_iterm2() {
 }
 
 function setup_vim () {
-  [ -f $HOME/.vimrc ] && mv $HOME/.vimrc $HOME/.vimrc.bak
+  [ -f $HOME/.vimrc ] && cp $HOME/.vimrc $HOME/.vimrc.bak
+  [ -e $HOME/.vimrc ] && rm $HOME/.vimrc
   ln -s $HOME/.dotfiles/vim/.vimrc $HOME/.vimrc
   sudo cp $HOME/.vimrc /var/root/
 }
 
-function setup_zsh() {
+function setup_oh_my_zsh() {
   export ZSH="$HOME/.oh-my-zsh"
   export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
 
   [ -e $HOME/.oh-my-zsh_old ] && rm -rf $HOME/.oh-my-zsh_old
   [ -e $HOME/.zshrc.bak ] && rm -f $HOME/.zshrc.bak
   [ -e $HOME/.oh-my-zsh ] && mv $HOME/.oh-my-zsh $HOME/.oh-my-zsh_old
-
-  [ -L $HOME/.zshrc ] && rm $HOME/.zshrc
-  [ -f $HOME/.zshrc ] && mv $HOME/.zshrc $HOME/.zshrc.bak
-
-  ln -s $HOME/.dotfiles/zshrc/.zshrc $HOME/.zshrc
 
   if [ ! -d "$HOME/.oh-my-zsh" ]; then
     RUNZSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
@@ -98,12 +94,12 @@ function setup_zsh() {
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM}/plugins/zsh-autosuggestions
   fi
 
-  [[ $(dscl . -read /Users/$USER UserShell | awk '{print $2}') == "/opt/homebrew/bin/zsh" ]] || {
-    echo "Setting zsh as the default shell"
-    sudo dscl . -create /Users/$USER UserShell /opt/homebrew/bin/zsh
-  }
+  [ -f $HOME/.zshrc ] && cp $HOME/.zshrc $HOME/.zshrc.bak
+  [ -e $HOME/.zshrc ] && rm $HOME/.zshrc
 
-  [ -e $HOME//.dotfiles/zsh/custom.zsh ] || {
+  ln -s $HOME/.dotfiles/zshrc/.zshrc $HOME/.zshrc
+
+  [ -e $HOME/.dotfiles/zsh/custom.zsh ] || {
     mkdir -p $HOME/.dotfiles/zsh
     cat << EOF > $HOME/.dotfiles/zsh/custom.zsh
 # placeholder for user custom configurations
@@ -114,11 +110,17 @@ EOF
   }
 }
 
+function setup_zsh() {
+  [[ $(dscl . -read /Users/$USER UserShell | awk '{print $2}') == "/opt/homebrew/bin/zsh" ]] || {
+    echo "Setting zsh as the default shell"
+    sudo dscl . -create /Users/$USER UserShell /opt/homebrew/bin/zsh
+  }
+}
 function setup_p10k() {
   [ -e $HOME/.p10k.zsh.bak ] && rm -f $HOME/.p10k.zsh.bak
 
-  [ -L $HOME/.p10k.zsh ] && rm $HOME/.p10k.zsh
   [ -f $HOME/.p10k.zsh ] && mv $HOME/.p10k.zsh $HOME/.p10k.zsh.bak
+  [ -e $HOME/.p10k.zsh ] && rm $HOME/.p10k.zsh
 
   ln -s $HOME/.dotfiles/p10k/.p10k.zsh $HOME/.p10k.zsh
 }
@@ -153,6 +155,7 @@ update_sudoers
 install_apps
 install_fonts
 setup_zsh
+setup_oh_my_zsh
 setup_p10k
 setup_vim
 setup_iterm2
