@@ -8,6 +8,8 @@
 	<integer>0</integer>
 	<key>AdjustWindowForFontSizeChange</key>
 	<true/>
+	<key>AllowClipboardAccess</key>
+	<true/>
 	<key>AppleAntiAliasingThreshold</key>
 	<integer>1</integer>
 	<key>ApplePressAndHoldEnabled</key>
@@ -121,7 +123,7 @@
 	<key>NSWindow Frame UKCrashReporter</key>
 	<string>180 611 592 590 0 0 2560 1415 </string>
 	<key>NSWindow Frame iTerm Window 0</key>
-	<string>0 644 835 483 0 0 2048 1127 </string>
+	<string>211 276 835 483 0 0 1512 944 </string>
 	<key>NeverWarnAboutShortLivedSessions_38F7D8F0-7092-48BE-914A-6D517CF031EC</key>
 	<true/>
 	<key>NeverWarnAboutShortLivedSessions_38F7D8F0-7092-48BE-914A-6D517CF031EC_selection</key>
@@ -1280,7 +1282,9 @@
 	<key>NoSyncLastTipTime</key>
 	<real>729358401.46157598</real>
 	<key>NoSyncLaunchExperienceControllerRunCount</key>
-	<integer>417</integer>
+	<integer>421</integer>
+	<key>NoSyncNeverAllowPaste</key>
+	<false/>
 	<key>NoSyncNeverAskAboutSettingAlternateMouseScroll</key>
 	<true/>
 	<key>NoSyncNextAnnoyanceTime</key>
