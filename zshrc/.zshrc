@@ -16,17 +16,14 @@ setopt SHARE_HISTORY
 setopt AUTO_CD
 unsetopt EQUALS
 
-HISTFILE=~/.zhistory
+HISTFILE=$HOME/.zhistory
 SAVEHIST=10000
 HISTSIZE=10000
 
-export ZSH="$HOME/.oh-my-zsh"
-
-ZSH_THEME="powerlevel10k/powerlevel10k"
 zstyle ':omz:update' frequency 13
 
 # K8S
-export KUBECONFIG=~/.kube/config
+export KUBECONFIG=$HOME/.kube/config
 alias k="kubecolor"
 alias kg="kubectl get"
 alias kd="kubectl describe"
@@ -89,6 +86,9 @@ alias py='python3'
 alias python='python3'
 
 # .oh-my-zsh
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="powerlevel10k/powerlevel10k"
+
 plugins=(
 git
 zsh-syntax-highlighting
@@ -96,7 +96,12 @@ zsh-autosuggestions
 )
 
 source $ZSH/oh-my-zsh.sh
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+[[ ! -f $HOME/.p10k.zsh ]] || source $HOME/.p10k.zsh
+
+# .dotfiles
+export DOTFILES=$HOME/.dotfiles
+export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/opt/homebrew/opt/util-linux/bin:/opt/homebrew/opt/util-linux/sbin:/opt/homebrew/opt/curl/bin:$PATH
+alias devup='cd $DOTFILES && git pull && cd -'
 
 # misc
 function myips() {
@@ -127,8 +132,6 @@ function myips() {
   echo "public ip: $(extip)"
 }
 
-export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/opt/homebrew/opt/util-linux/bin:/opt/homebrew/opt/util-linux/sbin:/opt/homebrew/opt/curl/bin:$PATH
-
 alias ls='lsd --group-dirs first'
 alias l='lsd -ltr --group-dirs first'
 alias ll='lsd -lh --group-dirs first'
@@ -150,4 +153,4 @@ export LC_ALL=en_US.UTF-8
 export EDITOR='vim'
 export GPG_TTY=$(tty)
 
-source ~/.dotfiles/zsh/custom.zsh
+source $HOME/.dotfiles/zsh/custom.zsh

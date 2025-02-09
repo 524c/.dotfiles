@@ -22,8 +22,6 @@ function update_sudoers() {
 
 function install_apps() {
   brew update > /dev/null 2>&1
-  echo "installing packages..."
-
   app_names=(
     "iterm2:iTerm.app"
     "visual-studio-code:Visual Studio Code.app"
@@ -61,33 +59,31 @@ function setup_iterm2() {
   # convert from binary to xml
   # plutil -convert xml1 -o iterm2_prefs.xml $ITERM2_PLIST
 
-  plutil -convert binary1 ~/.dotfiles/iterm2_prefs.xml -o "$ITERM2_PLIST"
+  plutil -convert binary1 $HOME/.dotfiles/iterm2/iterm2_prefs.xml -o "$ITERM2_PLIST"
 }
 
 function setup_vim () {
-  ln -s ~/.dotfiles/vim/.vimrc ~/.vimrc
-  sudo cp ~/.vimrc /var/root/
+  [ -f $HOME/.vimrc ] && mv $HOME/.vimrc $HOME/.vimrc.bak
+  ln -s $HOME/.dotfiles/vim/.vimrc $HOME/.vimrc
+  sudo cp $HOME/.vimrc /var/root/
 }
 
 function setup_zsh() {
-  echo "setup zsh..."
   export ZSH="$HOME/.oh-my-zsh"
   export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
 
   [ -e $HOME/.oh-my-zsh_old ] && rm -rf $HOME/.oh-my-zsh_old
   [ -e $HOME/.zshrc.bak ] && rm -f $HOME/.zshrc.bak
-  [ -e $HOME/.p10k.zsh.bak ] && rm -f $HOME/.p10k.zsh.bak
-
   [ -e $HOME/.oh-my-zsh ] && mv $HOME/.oh-my-zsh $HOME/.oh-my-zsh_old
-  [ -f $HOME/.zshrc ] && cp $HOME/.zshrc $HOME/.zshrc.bak
-  [ -f $HOME/.p10k.zsh ] && cp $HOME/.p10k.zsh $HOME/.p10k.zsh.bak
+
+  [ -L $HOME/.zshrc ] && rm $HOME/.zshrc
+  [ -f $HOME/.zshrc ] && mv $HOME/.zshrc $HOME/.zshrc.bak
+
+  ln -s $HOME/.dotfiles/zshrc/.zshrc $HOME/.zshrc
 
   if [ ! -d "$HOME/.oh-my-zsh" ]; then
     RUNZSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
   fi
-
-  [ -e ~/.zshrc ] && rm ~/.zshrc
-  ln -s ~/.dotfiles/zshrc/.zshrc ~/.zshrc
 
   if [ ! -d "${ZSH_CUSTOM}/themes/powerlevel10k" ]; then
     git clone https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM}/themes/powerlevel10k
@@ -107,9 +103,9 @@ function setup_zsh() {
     sudo dscl . -create /Users/$USER UserShell /opt/homebrew/bin/zsh
   }
 
-  [ -e ~/.dotfiles/zsh/custom.zsh ] || {
-    mkdir -p ~/.dotfiles/zsh
-    cat << EOF > ~/.dotfiles/zsh/custom.zsh
+  [ -e $HOME//.dotfiles/zsh/custom.zsh ] || {
+    mkdir -p $HOME/.dotfiles/zsh
+    cat << EOF > $HOME/.dotfiles/zsh/custom.zsh
 # placeholder for user custom configurations
 
 # alias x="x"
@@ -119,11 +115,16 @@ EOF
 }
 
 function setup_p10k() {
-  ln -s ~/.dotfiles/p10k/.p10k.zsh ~/.p10k.zsh
+  [ -e $HOME/.p10k.zsh.bak ] && rm -f $HOME/.p10k.zsh.bak
+
+  [ -L $HOME/.p10k.zsh ] && rm $HOME/.p10k.zsh
+  [ -f $HOME/.p10k.zsh ] && mv $HOME/.p10k.zsh $HOME/.p10k.zsh.bak
+
+  ln -s $HOME/.dotfiles/p10k/.p10k.zsh $HOME/.p10k.zsh
 }
 
 function clone_dotfiles() {
-  git clone https://github.com/524c/.dotfiles ~/.dotfiles
+  git clone https://github.com/524c/.dotfiles $HOME/.dotfiles
 }
 
 export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/opt/curl/bin:/bin:/sbin:/usr/bin:/usr/sbin:/opt/homebrew/bin
@@ -134,18 +135,17 @@ export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/opt/curl/bin:/bin:/sbin
 }
 
 [[ ! -x /opt/homebrew/bin/brew ]] && {
-  echo "installing homebrew..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
 }
 brew update > /dev/null 2>&1
 
 option=$1
-if [[ $option != "--reinstall" ]] &&  [[ -f ~/.dotfiles/install.sh ]]; then
+if [[ $option != "--reinstall" ]] &&  [[ -f $HOME/.dotfiles/install.sh ]]; then
   echo "The setup was done previously. Do you want to redo it? [y/n]"
   read -r r
   [[ $r == "y" ]] || exit 0
-  [ -e ~/.dotfiles_old ] && rm -rf ~/.dotfiles_old
-  mv ~/.dotfiles ~/.dotfiles_old
+  [ -e $HOME/.dotfiles_old ] && rm -rf $HOME/.dotfiles_old
+  mv $HOME/.dotfiles $HOME/.dotfiles_old
 fi
 
 clone_dotfiles
@@ -157,4 +157,4 @@ setup_p10k
 setup_vim
 setup_iterm2
 
-echo -e "\nQuit Terminal and reopen it to apply the changes.\n"
+echo -e "\nQuit Terminal and reopen it to apply the changes.\nUsage: devup to update the dotfiles."
