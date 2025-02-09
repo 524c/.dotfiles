@@ -51,7 +51,7 @@ function install_apps() {
 }
 
 function install_fonts() {
-  brew install --cask font-hack-nerd-font intellij-idea
+  brew install --cask font-hack-nerd-font
 }
 
 function setup_iterm2() {
@@ -137,6 +137,7 @@ export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/opt/curl/bin:/bin:/sbin
   echo "installing homebrew..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
 }
+brew update > /dev/null 2>&1
 
 option=$1
 if [[ $option != "--reinstall" ]] &&  [[ -f ~/.dotfiles/install.sh ]]; then
