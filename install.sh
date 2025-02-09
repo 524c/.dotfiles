@@ -116,6 +116,7 @@ function setup_zsh() {
     sudo dscl . -create /Users/$USER UserShell /opt/homebrew/bin/zsh
   }
 }
+
 function setup_p10k() {
   [ -e $HOME/.p10k.zsh.bak ] && rm -f $HOME/.p10k.zsh.bak
 
@@ -127,6 +128,16 @@ function setup_p10k() {
 
 function clone_dotfiles() {
   git clone https://github.com/524c/.dotfiles $HOME/.dotfiles
+}
+
+function setup_tmux() {
+  [ -d $HOME/.tmux_old ] && rm -rf $HOME/.tmux_old
+  [ -d $HOME/.tmux ] && mv $HOME/.tmux $HOME/.tmux_old
+  [ -e $HOME/.tmux.conf.bak ] && rm $HOME/.tmux.conf.bak
+  [ -e $HOME/.tmux.conf ] && mv $HOME/.tmux.conf $HOME/.tmux.conf.bak
+  mkdir -p $HOME/.tmux/plugins
+  git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+  ln -s $HOME/.dotfiles/tmux/.tmux.conf $HOME/.tmux.conf
 }
 
 export PATH=/usr/local/bin:/usr/local/sbin:/opt/homebrew/opt/curl/bin:/bin:/sbin:/usr/bin:/usr/sbin:/opt/homebrew/bin
@@ -159,5 +170,6 @@ setup_oh_my_zsh
 setup_p10k
 setup_vim
 setup_iterm2
+setup_tmux
 
 echo -e "\nQuit Terminal and reopen it to apply the changes.\nUsage: devup to update the dotfiles."
