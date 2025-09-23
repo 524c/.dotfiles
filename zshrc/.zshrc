@@ -1,30 +1,33 @@
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-fi
+#if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+#  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+#fi
 
 # zsh
-autoload -Uz compinit && compinit
+ZSH_DISABLE_COMPFIX=true
 setopt nocorrectall
 setopt APPEND_HISTORY
+setopt HIST_VERIFY
+setopt AUTO_CD
+unsetopt EQUALS
+
+export HISTFILE=$HOME/.zhistory
+export HISTSIZE=1000000
+export SAVEHIST=1000000
 setopt HIST_IGNORE_ALL_DUPS
 setopt HIST_FIND_NO_DUPS
+setopt HIST_REDUCE_BLANKS
+setopt SHARE_HISTORY
 setopt HIST_IGNORE_DUPS
 setopt HIST_REDUCE_BLANKS
 setopt HIST_IGNORE_SPACE
 setopt HIST_NO_STORE
-setopt SHARE_HISTORY
-setopt AUTO_CD
-unsetopt EQUALS
-
-HISTFILE=$HOME/.zhistory
-SAVEHIST=10000
-HISTSIZE=10000
-
-zstyle ':omz:update' frequency 13
+setopt HIST_EXPIRE_DUPS_FIRST
+setopt INC_APPEND_HISTORY
+setopt EXTENDED_HISTORY
 
 # K8S
 export KUBECONFIG=$HOME/.kube/config
-alias k="kubecolor"
+
 alias kg="kubectl get"
 alias kd="kubectl describe"
 alias kdel="kubectl delete"
@@ -47,8 +50,9 @@ alias khelp='echo -ne "kubectl config get-contexts\nkubectl config use-context N
 alias kp='kubectl proxy'
 alias kpf='kubectl port-forward '
 alias ksc='kubectl config set-context "$(kubectl config current-context)"'
-alias kubectl=kubecolor
 alias kuc='kubectl config use-context'
+alias k9s='k9s -A'
+alias kc='kctrl'
 
 # tmux
 alias ta='tmux attach-session -t'
@@ -87,8 +91,9 @@ alias python='python3'
 
 # .oh-my-zsh
 export ZSH="$HOME/.oh-my-zsh"
-ZSH_THEME="powerlevel10k/powerlevel10k"
+#ZSH_THEME="powerlevel10k/powerlevel10k"
 
+# autocomplete
 plugins=(
 git
 zsh-syntax-highlighting
@@ -96,7 +101,48 @@ zsh-autosuggestions
 )
 
 source $ZSH/oh-my-zsh.sh
-[[ ! -e $HOME/.p10k.zsh ]] || source $HOME/.p10k.zsh
+
+kctrl completion zsh > ~/.zsh/completions/_kctrl
+fpath=(~/.zsh/completions $fpath)
+
+autoload -U compinit && compinit
+
+#source <(kubecolor completion zsh)
+
+if [ $commands[conda] ]; then
+  eval "$(conda shell.zsh hook)"
+fi
+
+eval "$(starship init zsh)"
+
+function kubectl() {
+  if [[ $1 == "completion" ]]; then
+    command kubectl "$@"
+  else
+    kubecolor "$@"
+  fi
+}
+
+function k() {
+  if [[ $1 == "completion" ]]; then
+    command kubectl "$@"
+  else
+    kubecolor "$@"
+  fi
+}
+
+source <(kubectl completion zsh)
+compdef k=kubectl
+
+#source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+#source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+# bindkey
+bindkey '^[[A' history-search-backward
+bindkey '^[[B' history-search-forward
+bindkey  "^[[H"   beginning-of-line
+bindkey  "^[[F"   end-of-line
+bindkey  "^[[3~"  delete-char
 
 # .dotfiles
 export DOTFILES=$HOME/.dotfiles
@@ -113,9 +159,9 @@ function devup() {
     setup_oh_my_zsh
   }
 
-  [[ -f $HOME/.p10k.zsh ]] || {
-    setup_p10k
-  }
+  #[[ -f $HOME/.p10k.zsh ]] || {
+  #  setup_p10k
+  #}
 
   [[ -f $HOME/.dotfiles/vim/.vimrc ]] || {
     setup_vim
@@ -128,8 +174,9 @@ function devup() {
 
 # tmux
 function ts() {
-  tmux has-session -t $1 2>/dev/null || tmux new-session -d -s $1
-  tmux attach-session -t $1
+  name=$1
+  tmux has-session -t $name 2>/dev/null || tmux new-session -d -s $name
+  tmux attach-session -t $name
 }
 
 # misc
@@ -161,7 +208,7 @@ function myips() {
   echo "public ip: $(extip)"
 }
 
-alias ls='lsd --group-dirs first'
+alias ls='lsd -ltr --group-dirs first'
 alias l='lsd -ltr --group-dirs first'
 alias ll='lsd -lh --group-dirs first'
 alias lt='lsd -ltr --group-dirs first'
@@ -184,4 +231,43 @@ export GPG_TTY=$(tty)
 
 source $HOME/.dotfiles/zsh/custom.zsh
 
-tmux has-session -t session1 2>/dev/null || tmux new-session -d -s session1
+source <(fzf --zsh)
+
+. "$HOME/.local/bin/env"
+
+#[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+export HOMEBREW_PREFIX="/opt/homebrew";
+export HOMEBREW_CELLAR="/opt/homebrew/Cellar";
+export HOMEBREW_REPOSITORY="/opt/homebrew";
+
+#fpath[1,0]="/opt/homebrew/share/zsh/site-functions";
+#PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/opt/homebrew/Caskroom/miniconda/base/envs/Orpheus-TTS/bin:/Users/rlucas/.local/bin:/opt/homebrew/Caskroom/miniconda/base/condabin:/Users/rlucas/.bun/bin:/usr/local/bin:/usr/local/sbin:/opt/homebrew/opt/util-linux/bin:/opt/homebrew/opt/util-linux/sbin:/opt/homebrew/opt/curl/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/Wireshark.app/Contents/MacOS:/usr/local/share/dotnet:~/.dotnet/tools:/opt/podman/bin:/Users/rlucas/.cache/lm-studio/bin"; export PATH;
+[ -z "${MANPATH-}" ] || export MANPATH=":${MANPATH#:}";
+export INFOPATH="/opt/homebrew/share/info:${INFOPATH:-}";
+
+# bun completions
+[ -s "/Users/rlucas/.bun/_bun" ] && source "/Users/rlucas/.bun/_bun"
+
+[[ "$TERM_PROGRAM" == "vscode" ]] && . "$(code --locate-shell-integration-path zsh)"
+
+source $HOME/.dotfiles/zsh/k8s.sh
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/opt/homebrew/Caskroom/miniconda/base/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/opt/homebrew/Caskroom/miniconda/base/etc/profile.d/conda.sh" ]; then
+        . "/opt/homebrew/Caskroom/miniconda/base/etc/profile.d/conda.sh"
+    else
+        export PATH="/opt/homebrew/Caskroom/miniconda/base/bin:$PATH"
+    fi
+fi
+#export PATH="/opt/homebrew/Caskroom/miniconda/base/envs/coding-agent/bin:$PATH"
+unset __conda_setup
+# <<< conda initialize <<<
+
+
+# opencode
+export PATH=/Users/rlucas/.opencode/bin:$PATH
