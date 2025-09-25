@@ -13,7 +13,7 @@ DEFAULT_AWS_REGION="us-east-1"
 # Format: "cluster_name|state_store|aws_profile|display_name"
 declare -A K8S_CONTEXTS=(
     ["stg"]="stg.k8s.multpex.com.br|s3://state.stg.multpex.com.br|multpex-stg|Staging Cluster"
-    ["prd"]="k8s.multpex.com.br|s3://state.multpex.com.br|multpex-prd|Production Cluster"
+    ["prd"]="prd.k8s.multpex.com.br|s3://state.multpex.com.br|multpex-prd|Production Cluster"
 )
 
 # Context aliases - point to existing context keys
@@ -142,6 +142,46 @@ _k8s_get_display_name() {
     fi
 }
 
+# Function to toggle between stg and prd contexts
+_k8s_toggle_context() {
+    # Get current context from state file or current kubectl context
+    local current_context=""
+
+    if [[ -f "$K8S_STATE_FILE" ]]; then
+        source "$K8S_STATE_FILE"
+        current_context="$CURRENT_CONTEXT"
+    fi
+
+    # If no saved context, try to determine from current kubectl context
+    if [[ -z "$current_context" ]]; then
+        local kubectl_context=$(kubectx -c 2>/dev/null)
+        if [[ "$kubectl_context" == "stg.k8s.multpex.com.br" ]]; then
+            current_context="staging"
+        elif [[ "$kubectl_context" == "prd.k8s.multpex.com.br" ]]; then
+            current_context="production"
+        fi
+    fi
+
+    # Determine target context based on current context
+    local target_context=""
+    case "$current_context" in
+        "staging")
+            target_context="prd"
+            ;;
+        "production")
+            target_context="stg"
+            ;;
+        *)
+            # Default to stg if current context is unknown
+            target_context="stg"
+            echo "Current context unknown, switching to staging (stg)"
+            ;;
+    esac
+
+    # Switch to target context
+    k8s "$target_context"
+}
+
 # Function to show available contexts
 _k8s_show_contexts() {
     echo "Available contexts:"
@@ -153,6 +193,7 @@ _k8s_show_contexts() {
         local display_name=$(_k8s_get_display_name $target)
         printf "  %-12s - %s (alias)\n" "$alias" "$display_name"
     done
+    echo "  toggle       - Toggle between stg and prd contexts"
     echo "  sync         - Sync with saved context"
     echo "  clear        - Clear saved context"
 }
@@ -166,12 +207,15 @@ k8s() {
     local context=$1
 
     if [[ -z "$context" ]]; then
-        echo "Usage: k8s <context>"
-        _k8s_show_contexts
-        return 1
+        # If no argument provided, automatically toggle
+        _k8s_toggle_context
+        return 0
     fi
 
     case "$context" in
+        "toggle")
+            _k8s_toggle_context
+            ;;
         "sync")
             _k8s_load_state
             export K8S_CURRENT_LOADED="$CURRENT_CONTEXT"
@@ -237,6 +281,12 @@ k8s-auto() {
     done
 }
 
+# Quick toggle alias
+function toggle_k8s() {
+  k8s toggle
+  zle reset-prompt
+}
+
 # ============================================================================
 # AUTOCOMPLETION
 # ============================================================================
@@ -251,7 +301,7 @@ _k8s_completion() {
         local display_name=$(_k8s_get_display_name $alias)
         contexts+=("$alias:$display_name")
     done
-    contexts+=('sync:Sync with saved context' 'clear:Clear saved context')
+    contexts+=('toggle:Toggle between stg and prd contexts' 'sync:Sync with saved context' 'clear:Clear saved context')
     _describe 'contexts' contexts
 }
 
@@ -263,3 +313,6 @@ compdef _k8s_completion k8s
 
 # Load state on shell startup
 _k8s_load_state
+
+zle -N toggle_k8s
+bindkey '^k' toggle_k8s
