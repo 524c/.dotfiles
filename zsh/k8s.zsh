@@ -12,7 +12,7 @@ DEFAULT_AWS_REGION="us-east-1"
 # Available contexts definition
 # Format: "cluster_name|state_store|aws_profile|display_name"
 declare -A K8S_CONTEXTS=(
-    ["stg"]="stg.k8s.multpex.com.br|s3://state.stg.multpex.com.br|multpex-stg|Staging Cluster"
+    ["stg"]="stg.k8s.multpex.com.br|s3://state.devops.multpex.com.br|multpex-devops|Staging Cluster"
     ["prd"]="prd.k8s.multpex.com.br|s3://state.multpex.com.br|multpex-prd|Production Cluster"
 )
 
@@ -144,6 +144,7 @@ _k8s_get_display_name() {
 
 # Function to toggle between stg and prd contexts
 _k8s_toggle_context() {
+    local silent=$1
     # Get current context from state file or current kubectl context
     local current_context=""
 
@@ -174,12 +175,12 @@ _k8s_toggle_context() {
         *)
             # Default to stg if current context is unknown
             target_context="stg"
-            echo "Current context unknown, switching to staging (stg)"
+            [[ "$silent" != "silent" ]] && echo "Current context unknown, switching to staging (stg)"
             ;;
     esac
 
     # Switch to target context
-    k8s "$target_context"
+    k8s "$target_context" "$silent"
 }
 
 # Function to show available contexts
@@ -205,26 +206,27 @@ _k8s_show_contexts() {
 # Function to switch Kubernetes contexts
 k8s() {
     local context=$1
+    local silent=$2
 
     if [[ -z "$context" ]]; then
         # If no argument provided, automatically toggle
-        _k8s_toggle_context
+        _k8s_toggle_context "$silent"
         return 0
     fi
 
     case "$context" in
         "toggle")
-            _k8s_toggle_context
+            _k8s_toggle_context "$silent"
             ;;
         "sync")
             _k8s_load_state
             export K8S_CURRENT_LOADED="$CURRENT_CONTEXT"
-            echo "Synced with saved context: $CURRENT_CONTEXT"
+            [[ "$silent" != "silent" ]] && echo "Synced with saved context: $CURRENT_CONTEXT"
             ;;
         "clear")
             rm -f "$K8S_STATE_FILE" "$K8S_SIGNAL_FILE"
             unset KOPS_CLUSTER_NAME KOPS_STATE_STORE AWS_PROFILE CURRENT_CONTEXT K8S_CURRENT_LOADED AWS_REGION
-            echo "Context state cleared"
+            [[ "$silent" != "silent" ]] && echo "Context state cleared"
             ;;
         *)
             # Check if context exists in our configuration
@@ -236,14 +238,16 @@ k8s() {
                     _k8s_save_state "$mapped_context"
                     export K8S_CURRENT_LOADED="$mapped_context"
 
-                    echo "Switched to $(_k8s_get_display_name $context) ($KOPS_CLUSTER_NAME)"
+                    [[ "$silent" != "silent" ]] && echo "Switched to $(_k8s_get_display_name $context) ($KOPS_CLUSTER_NAME)"
                 else
-                    echo "Failed to switch to context: $KOPS_CLUSTER_NAME"
+                    [[ "$silent" != "silent" ]] && echo "Failed to switch to context: $KOPS_CLUSTER_NAME"
                     return 1
                 fi
             else
-                printf "Context '%s' not recognized\n" "$context"
-                _k8s_show_contexts
+                if [[ "$silent" != "silent" ]]; then
+                    printf "Context '%s' not recognized\n" "$context"
+                    _k8s_show_contexts
+                fi
                 return 1
             fi
             ;;
@@ -283,7 +287,16 @@ k8s-auto() {
 
 # Quick toggle alias
 function toggle_k8s() {
-  k8s toggle
+  # Execute k8s toggle silently
+  k8s toggle silent
+
+  # Touch kubeconfig to trigger starship refresh
+  touch ~/.kube/config
+
+  # Small delay to ensure starship detects the change
+  sleep 0.05
+
+  # Force prompt refresh
   zle reset-prompt
 }
 
