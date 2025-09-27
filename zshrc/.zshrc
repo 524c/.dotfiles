@@ -94,13 +94,12 @@ export ZSH="$HOME/.oh-my-zsh"
 #ZSH_THEME="powerlevel10k/powerlevel10k"
 
 # autocomplete
-plugins=(
-git
-zsh-syntax-highlighting
-zsh-autosuggestions
-)
-
-source $ZSH/oh-my-zsh.sh
+#plugins=(
+#git
+#zsh-syntax-highlighting
+#zsh-autosuggestions
+#)
+#source $ZSH/oh-my-zsh.sh
 
 kctrl completion zsh > ~/.zsh/completions/_kctrl
 fpath=(~/.zsh/completions $fpath)
@@ -134,8 +133,12 @@ function k() {
 source <(kubectl completion zsh)
 compdef k=kubectl
 
-#source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-#source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+source /opt/homebrew/opt/zsh-git-prompt/zshrc.sh
+
+# commands-middleware plugin - MUST be loaded AFTER other plugins
+source $HOME/.dotfiles/zsh/commands-middleware.zsh
 
 # bindkey
 bindkey '^[[A' history-search-backward
@@ -250,7 +253,7 @@ export INFOPATH="/opt/homebrew/share/info:${INFOPATH:-}";
 
 [[ "$TERM_PROGRAM" == "vscode" ]] && . "$(code --locate-shell-integration-path zsh)"
 
-source $HOME/.dotfiles/zsh/k8s.sh
+#source $HOME/.dotfiles/zsh/k8s.sh
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
@@ -267,7 +270,6 @@ fi
 #export PATH="/opt/homebrew/Caskroom/miniconda/base/envs/coding-agent/bin:$PATH"
 unset __conda_setup
 # <<< conda initialize <<<
-
 
 # opencode
 export PATH=/Users/rlucas/.opencode/bin:$PATH
