@@ -51,7 +51,7 @@ alias kp='kubectl proxy'
 alias kpf='kubectl port-forward '
 alias ksc='kubectl config set-context "$(kubectl config current-context)"'
 alias kuc='kubectl config use-context'
-alias k9s='k9s -A'
+#alias k9s='k9s -A'
 alias kc='kctrl'
 
 # tmux
@@ -137,13 +137,6 @@ compdef k=kubectl
 source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 source /opt/homebrew/opt/zsh-git-prompt/zshrc.sh
-
-# commands-middleware plugin (re-enabled v1.7 for instrumentation)
-# Force reload of commands-middleware and its plugins on every source
-unset COMMANDS_MIDDLEWARE_INITIALIZED &>/dev/null
-unfunction commands_middleware_register commands_middleware_accept_line commands_middleware_setup_zle commands_middleware_restore commands_middleware_init commands_middleware_reload aws_middleware aws_fix_s3_uri aws_session_valid aws_refresh_session aws_mw_debug &>/dev/null
-
-source $HOME/.dotfiles/zsh/commands-middleware.zsh
 
 # bindkey
 bindkey '^[[A' history-search-backward
