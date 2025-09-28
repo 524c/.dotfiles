@@ -18,9 +18,11 @@ commands_middleware_register() {
 
 # Main command processing function - intercepts and can modify commands
 commands_middleware_accept_line() {
-  [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][debug] accept_line called with BUFFER='$BUFFER'" >&2
-  local original_buffer="$BUFFER"
-  local original_cursor="$CURSOR"
+   echo "[DEBUG] commands_middleware_accept_line called with BUFFER='$BUFFER'" >&2
+   [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][debug] accept_line called with BUFFER='$BUFFER'" >&2
+   [[ -n "$K8S_ENV_VALIDATION_DEBUG" ]] && echo "[commands-middleware][debug] K8S_ENV_VALIDATION_DEBUG active, BUFFER='$BUFFER'" >&2
+   local original_buffer="$BUFFER"
+   local original_cursor="$CURSOR"
   
   # Skip empty commands
   [[ -z "${original_buffer//[[:space:]]/}" ]] && {
@@ -31,20 +33,21 @@ commands_middleware_accept_line() {
   
   [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][debug] processing command: '$original_buffer'" >&2
   
-  # Process through middlewares - they can modify BUFFER
-  local mw
-  for mw in $COMMANDS_MIDDLEWARE_LOADED; do
-    [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][debug] calling middleware: $mw" >&2
-    # Call middleware with current buffer content; middleware can modify BUFFER directly
-    # or return corrected command
-    local mw_output
-    if mw_output=$($mw "$BUFFER" 2>/dev/null); then
-      if [[ -n "$mw_output" && "$mw_output" != "$BUFFER" ]]; then
-        BUFFER="$mw_output"
-        [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][debug] buffer modified by $mw to '$BUFFER'" >&2
-      fi
-    fi
-  done
+   # Process through middlewares - they can modify BUFFER
+   local mw
+   for mw in $COMMANDS_MIDDLEWARE_LOADED; do
+     [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][debug] calling middleware: $mw" >&2
+     [[ -n "$K8S_ENV_VALIDATION_DEBUG" ]] && echo "[commands-middleware][debug] K8S calling middleware: $mw" >&2
+     # Call middleware with current buffer content; middleware can modify BUFFER directly
+     # or return corrected command
+     local mw_output
+     if mw_output=$($mw "$BUFFER" 2>/dev/null); then
+       if [[ -n "$mw_output" && "$mw_output" != "$BUFFER" ]]; then
+         BUFFER="$mw_output"
+         [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][debug] buffer modified by $mw to '$BUFFER'" >&2
+       fi
+     fi
+   done
   
   # If buffer was modified by middleware, update cursor position
   if [[ "$BUFFER" != "$original_buffer" ]]; then

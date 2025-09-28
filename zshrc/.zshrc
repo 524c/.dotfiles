@@ -1,7 +1,3 @@
-#if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-#  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-#fi
-
 # zsh
 ZSH_DISABLE_COMPFIX=true
 setopt nocorrectall
@@ -90,38 +86,31 @@ alias pip='pip3'
 alias py='python3'
 alias python='python3'
 
+# plugins configs
+export K8S_CONTEXT_MAPPINGS="prd.k8s.multpex.com.br=production|stg.k8s.multpex.com.br=staging"
+
 # .oh-my-zsh
 export ZSH="$HOME/.oh-my-zsh"
 #ZSH_THEME="powerlevel10k/powerlevel10k"
 
 # autocomplete
-#plugins=(
-#git
-#zsh-syntax-highlighting
-#zsh-autosuggestions
-#)
-#source $ZSH/oh-my-zsh.sh
+plugins=(
+git
+zsh-syntax-highlighting
+zsh-autosuggestions
+)
+source $ZSH/oh-my-zsh.sh
 
 kctrl completion zsh > ~/.zsh/completions/_kctrl
 fpath=(~/.zsh/completions $fpath)
 
 autoload -U compinit && compinit
 
-#source <(kubecolor completion zsh)
-
 if [ $commands[conda] ]; then
   eval "$(conda shell.zsh hook)"
 fi
 
 eval "$(starship init zsh)"
-
-function kubectl() {
-  if [[ $1 == "completion" ]]; then
-    command kubectl "$@"
-  else
-    kubecolor "$@"
-  fi
-}
 
 function k() {
   if [[ $1 == "completion" ]]; then
@@ -134,9 +123,10 @@ function k() {
 source <(kubectl completion zsh)
 compdef k=kubectl
 
-source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-source /opt/homebrew/opt/zsh-git-prompt/zshrc.sh
+# needs oh-my-zsh for autosuggestion works
+#source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+#source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+#source /opt/homebrew/opt/zsh-git-prompt/zshrc.sh
 
 # bindkey
 bindkey '^[[A' history-search-backward
@@ -241,8 +231,6 @@ export HOMEBREW_PREFIX="/opt/homebrew";
 export HOMEBREW_CELLAR="/opt/homebrew/Cellar";
 export HOMEBREW_REPOSITORY="/opt/homebrew";
 
-#fpath[1,0]="/opt/homebrew/share/zsh/site-functions";
-#PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/opt/homebrew/Caskroom/miniconda/base/envs/Orpheus-TTS/bin:/Users/rlucas/.local/bin:/opt/homebrew/Caskroom/miniconda/base/condabin:/Users/rlucas/.bun/bin:/usr/local/bin:/usr/local/sbin:/opt/homebrew/opt/util-linux/bin:/opt/homebrew/opt/util-linux/sbin:/opt/homebrew/opt/curl/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/Wireshark.app/Contents/MacOS:/usr/local/share/dotnet:~/.dotnet/tools:/opt/podman/bin:/Users/rlucas/.cache/lm-studio/bin"; export PATH;
 [ -z "${MANPATH-}" ] || export MANPATH=":${MANPATH#:}";
 export INFOPATH="/opt/homebrew/share/info:${INFOPATH:-}";
 
