@@ -68,20 +68,20 @@ aws_middleware() {
 aws_session_valid() {
   local cache_file="/tmp/aws_session_cache_$(whoami)"
   local cache_duration=3600  # 1 hour in seconds
-  
+
   # Check if cache file exists and is recent
   if [[ -f "$cache_file" ]]; then
     local cache_timestamp=$(cat "$cache_file" 2>/dev/null)
     local current_timestamp=$(date +%s)
-    
+
     # If cache is valid (within duration), assume session is valid
     if [[ -n "$cache_timestamp" ]] && (( current_timestamp - cache_timestamp < cache_duration )); then
       return 0
     fi
   fi
-  
+
   # Cache expired or doesn't exist - check actual AWS session
-  if aws sts get-caller-identity &>/dev/null; then
+  if /opt/homebrew/bin/aws sts get-caller-identity &>/dev/null; then
     # Session is valid - update cache
     date +%s > "$cache_file"
     return 0
@@ -95,21 +95,21 @@ aws_session_valid() {
 # Refresh AWS session
 aws_refresh_session() {
   local cache_file="/tmp/aws_session_cache_$(whoami)"
-  
+
   # Remove cache before refresh
   rm -f "$cache_file" 2>/dev/null
-  
+
   # Simple session refresh - extend as needed
   if command -v aws-sso >/dev/null 2>&1; then
     aws-sso login
   elif [[ -n "$AWS_PROFILE" ]]; then
-    aws sso login --profile "$AWS_PROFILE"
+    /opt/homebrew/bin/aws sso login --profile "$AWS_PROFILE"
   else
-    aws sso login
+    /opt/homebrew/bin/aws sso login
   fi
-  
+
   # If refresh was successful, update cache
-  if aws sts get-caller-identity &>/dev/null; then
+  if /opt/homebrew/bin/aws sts get-caller-identity &>/dev/null; then
     date +%s > "$cache_file"
   fi
 }
@@ -121,14 +121,14 @@ aws_mw_debug() { [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && print -u2 "[commands-middle
 aws_fix_s3_uri() {
   local words_var=$1
   local aws_start=$2
-  
+
   # Copy array by name reference
   local -a words=("${(@P)words_var}")
   local -a fixed_words=("${words[@]}")
   local changed=false
 
   aws_mw_debug "entered aws_fix_s3_uri; aws_start=$aws_start raw_command='${words[*]}'"
-  
+
   # Check if this is an S3 command (zsh arrays are 1-indexed)
   if (( aws_start + 1 <= ${#words[@]} )) && [[ "${words[$((aws_start+1))]}" == "s3" ]]; then
     aws_mw_debug "detected s3 subcommand"
@@ -175,23 +175,23 @@ aws_fix_s3_uri() {
             local prev_index=$((i-1))
             local prev="${words[prev_index]}"
             aws_mw_debug "arg index=$i value='$arg' prev='$prev'"
-            
+
             # Skip if already has s3:// prefix or is a flag itself
             if [[ "$arg" =~ ^s3:// ]]; then aws_mw_debug "skip already prefixed"; continue; fi
             if [[ "$arg" =~ ^- ]]; then aws_mw_debug "skip flag"; continue; fi
             # Skip if this is the value of a preceding flag (e.g. --region us-east-1)
             if [[ "$prev" =~ ^- && "$prev" != *=* ]]; then aws_mw_debug "skip flag value for $prev"; continue; fi
-            
+
             # Skip local filesystem paths (starts with ./ or /)
             if [[ "$arg" =~ ^\.?/ ]]; then aws_mw_debug "skip local path (starts with ./ or /)"; continue; fi
-            
+
             # Handle quoted buckets/paths
             local stripped="$arg" had_quotes=0
             if [[ ( "$arg" == \"*\" && "$arg" == *\" ) || ( "$arg" == "'*'" && "$arg" == *"'*'" ) ]]; then
               stripped="${arg:1:${#arg}-2}"
               had_quotes=1
             fi
-            
+
             # Local file heuristic ONLY if no slash present (bucket/path should still be eligible)
             if [[ "$stripped" != */* ]]; then
               local extension="${stripped##*.}"
@@ -200,7 +200,7 @@ aws_fix_s3_uri() {
                 continue
               fi
             fi
-            
+
             # Bare bucket
             if [[ "$stripped" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] && [[ ${#stripped} -ge 3 ]] && [[ ${#stripped} -le 63 ]]; then
               fixed_words[i]="s3://$stripped"
@@ -222,11 +222,11 @@ aws_fix_s3_uri() {
           for i in $(seq $((aws_start + 3)) ${#words[@]}); do
             local arg="${words[i]}"
             aws_mw_debug "rm arg index=$i value='$arg'"
-            
+
             # Skip if already has s3:// prefix or is a flag
             if [[ "$arg" =~ ^s3:// ]]; then aws_mw_debug "skip already prefixed"; continue; fi
             if [[ "$arg" =~ ^- ]]; then aws_mw_debug "skip flag"; continue; fi
-            
+
             # Reordered logic for rm:
             # 1. Skip explicit filesystem paths starting with ./ or /
             # 2. If bucket/path pattern (contains slash) add prefix (even if object has extension)
@@ -258,7 +258,7 @@ aws_fix_s3_uri() {
       esac
     fi
   fi
-  
+
   if [[ "$changed" == "true" ]]; then
     # Return corrected command via stdout
     print -n "${fixed_words[*]}"
@@ -340,6 +340,30 @@ aws_middleware_selftest() {
   fi
 }
 
+# Function to check if command is a delete operation
+is_delete_command() {
+  local cmd="$1"
+  local -a words
+  words=(${(z)cmd})
+  local aws_start=0
+  for i in {1..${#words[@]}}; do
+    if [[ "${words[i]}" == *"="* ]]; then
+      continue
+    else
+      if [[ "${words[i]}" == "aws" || "${words[i]}" == "/opt/homebrew/bin/aws" ]]; then
+        aws_start=$i
+        break
+      fi
+    fi
+  done
+  if (( aws_start > 0 && aws_start + 2 <= ${#words[@]} )); then
+    if [[ "${words[$((aws_start+1))]}" == "s3" && ("${words[$((aws_start+2))]}" == "rm" || "${words[$((aws_start+2))]}" == "rb") ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 # Register this middleware
 [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[DIAGNOSTIC] aws.zsh: Registering aws_middleware"
 commands_middleware_register "aws_middleware"
@@ -347,7 +371,7 @@ commands_middleware_register "aws_middleware"
 # Also define an aws wrapper function for direct command interception
 aws() {
   [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] aws wrapper called with: $*" >&2
-  
+
   # Call middleware with the full command (prepend 'aws')
   local full_command="aws $*"
   local middleware_output
@@ -356,13 +380,24 @@ aws() {
     if [[ -n "$middleware_output" && "$middleware_output" != "$full_command" ]]; then
       # Replace 'aws' with full path to avoid function recursion
       local corrected_command="${middleware_output/#aws//opt/homebrew/bin/aws}"
-      [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] executing corrected command: $corrected_command" >&2
-      eval "$corrected_command"
-      return
+      exec_cmd="$corrected_command"
+    else
+      exec_cmd="/opt/homebrew/bin/aws $@"
+    fi
+  else
+    exec_cmd="/opt/homebrew/bin/aws $@"
+  fi
+
+  # Check for delete operations and prompt for confirmation
+  if is_delete_command "$exec_cmd"; then
+    echo -n "Are you sure you want to delete? (y/N) "
+    read -q response
+    if [[ "$response" != "y" && "$response" != "Y" ]]; then
+      return 1
     fi
   fi
-  
-  # Execute original command if no correction needed
-  [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] executing original command: /opt/homebrew/bin/aws $*" >&2
-  /opt/homebrew/bin/aws "$@"
+
+  # Execute the command
+  [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] executing command: $exec_cmd" >&2
+  eval "$exec_cmd"
 }
