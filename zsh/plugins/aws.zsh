@@ -7,26 +7,52 @@ aws_middleware() {
   local command="$1"
   debug "middleware invoked with command='$command'"
 
+  # SMART FILTERING: Skip commands that contain "aws" but are not AWS commands  
+  # Skip variable assignments that contain "aws" in name or value (but not actual AWS commands)
+  # Allow if contains actual AWS command patterns: " aws " or "aws " or "$(aws" or "`aws"
+  if [[ "$command" == *"="* && "$command" != *" aws "* && "$command" != "aws "* && "$command" != *'$(aws'* && "$command" != *'`aws'* ]]; then
+    debug "skipping variable assignment containing 'aws': $command"
+    return 0
+  fi
+  
+  # Skip grep/search commands that contain "aws" as search term
+  if [[ "$command" == "grep "*"aws"* || "$command" == "find "*"aws"* || "$command" == "cat "*"aws"* ]]; then
+    debug "skipping search command containing 'aws': $command"
+    return 0
+  fi
+
   # Split the line into tokens respecting quotes (defensive)
   local -a words
   { words=(${(z)command}) } 2>/dev/null || return 0
   (( ${#words[@]} )) || return 0
   debug "tokenized: ${words[*]}"
 
-  # Ignore prefixed environment assignments (FOO=bar AWS_REGION=us-east-1 aws s3 ls)
-  local first_word=""
+  # Find AWS command anywhere in the line (support for pipes, &&, etc.)
+  # Enhanced: Also detect AWS commands inside command substitutions
   local aws_cmd_start=0
+  local aws_in_substitution=false
+  local substitution_token=""
+  
   for i in {1..${#words[@]}}; do
-    if [[ "${words[i]}" == *"="* ]]; then
-      continue
-    else
-      first_word="${words[i]}"
+    local word="${words[i]}"
+    
+    # Direct AWS command
+    if [[ "$word" == "aws" ]]; then
       aws_cmd_start=$i
+      break
+    fi
+    
+    # AWS command inside command substitution: $(aws ...) or `aws ...`
+    if [[ "$word" == *'$(aws'* || "$word" == *'`aws'* ]]; then
+      aws_cmd_start=$i
+      aws_in_substitution=true
+      substitution_token="$word"
+      debug "detected aws command in substitution: $word"
       break
     fi
   done
 
-  [[ "$first_word" == "aws" ]] || { debug "first word '$first_word' != aws, exiting"; return; }
+  [[ $aws_cmd_start -gt 0 ]] || { debug "no 'aws' command found in: ${words[*]}"; return; }
   debug "detected aws command starting at index=$aws_cmd_start"
 
   # Detect and handle aws sso logout command - clear all caches
@@ -103,15 +129,65 @@ aws_middleware() {
 
    # Check and fix S3 URI format
    local corrected_command
-    # Only attempt URI correction for commands that actually supply bucket/objects
-     if corrected_command=$(aws_fix_s3_uri words $aws_cmd_start 2>/dev/null); then
-      debug "corrected S3 URI - command: '$corrected_command'"
+   
+   # Handle command substitution case separately
+   if [[ "$aws_in_substitution" == true ]]; then
+     debug "AWS command in substitution detected, applying substitution-aware processing"
      
-     # Return the corrected command - buffer update will be handled by main system
-     echo "$corrected_command"
+     # For command substitutions, we primarily ensure session validity (already done above)
+     # S3 URI correction for substitutions would need special handling, but it's rare
+     # Most substitutions are for describe/get operations, not S3 operations
+     
+     # For EC2 describe-instances and similar, no correction needed
+     if [[ "$substitution_token" == *"ec2"* || "$substitution_token" == *"sts"* || "$substitution_token" == *"iam"* ]]; then
+       debug "AWS service command in substitution (ec2/sts/iam) - no correction needed"
+       return 0
+     fi
+     
+      # For S3 commands in substitution, attempt correction (advanced case)
+      if [[ "$substitution_token" == *"s3"* ]]; then
+        debug "S3 command in substitution detected - attempting correction"
+        
+        # Use regex-based approach for more reliable extraction
+        local aws_part corrected_substitution
+        
+        # Handle $(...) syntax
+        if [[ "$substitution_token" =~ '\$\((.+)\)' ]]; then
+          aws_part="$match[1]"
+          local -a temp_words=(${(z)aws_part})
+          local temp_corrected
+          if temp_corrected=$(aws_fix_s3_uri temp_words 1 2>/dev/null); then
+            corrected_substitution="\$(${temp_corrected})"
+            echo "${command/$substitution_token/$corrected_substitution}"
+            return 0
+          fi
+        # Handle `...` syntax  
+        elif [[ "$substitution_token" =~ '`(.+)`' ]]; then
+          aws_part="$match[1]"
+          local -a temp_words=(${(z)aws_part})
+          local temp_corrected
+          if temp_corrected=$(aws_fix_s3_uri temp_words 1 2>/dev/null); then
+            corrected_substitution="\`${temp_corrected}\`"
+            echo "${command/$substitution_token/$corrected_substitution}"
+            return 0
+          fi
+        fi
+      fi
+     
+     # No correction applied to substitution
      return 0
    fi
-  debug "no URI correction applied"
+   
+   # Standard case: AWS command as separate tokens
+   # Only attempt URI correction for commands that actually supply bucket/objects
+   if corrected_command=$(aws_fix_s3_uri words $aws_cmd_start 2>/dev/null); then
+     debug "corrected S3 URI - command: '$corrected_command'"
+    
+    # Return the corrected command - buffer update will be handled by main system
+    echo "$corrected_command"
+    return 0
+   fi
+   debug "no URI correction applied"
 
   # S3 mb / rb guard: ensure we did not erroneously prepend anything
   if (( aws_cmd_start + 1 <= ${#words[@]} )) && [[ "${words[$((aws_cmd_start+1))]}" == "s3" ]]; then
@@ -441,7 +517,7 @@ is_delete_command() {
 
 # Register with the new plugin system - AWS command patterns
 debug "aws.zsh: Registering aws_middleware with routing patterns"
-plugin_register "aws_middleware" "aws*"
+plugin_register "aws_middleware" "aws* *aws s3* *aws ec2*"
 
 # AWS wrapper function disabled - using ZLE integration for visual buffer updates
 # aws() {
