@@ -101,6 +101,8 @@ zsh-autosuggestions
 )
 source $ZSH/oh-my-zsh.sh
 
+# Force rebind will happen after middleware loading
+
 kctrl completion zsh > ~/.zsh/completions/_kctrl
 fpath=(~/.zsh/completions $fpath)
 
@@ -239,11 +241,9 @@ export INFOPATH="/opt/homebrew/share/info:${INFOPATH:-}";
 
 [[ "$TERM_PROGRAM" == "vscode" ]] && . "$(code --locate-shell-integration-path zsh)"
 
-#source $HOME/.dotfiles/zsh/k8s.sh
-
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/opt/homebrew/Caskroom/miniconda/base/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+__conda_setup="$("/opt/homebrew/Caskroom/miniconda/base/bin/conda" 'shell.zsh' 'hook' 2> /dev/null)"
 if [ $? -eq 0 ]; then
     eval "$__conda_setup"
 else
@@ -259,10 +259,3 @@ unset __conda_setup
 
 # opencode
 export PATH=/Users/rlucas/.opencode/bin:$PATH
-
-# commands-middleware plugin (moved to end to work with zsh-syntax-highlighting)
-# Force reload of commands-middleware and its plugins on every source
-unset COMMANDS_MIDDLEWARE_INITIALIZED &>/dev/null
-unfunction commands_middleware_register commands_middleware_accept_line commands_middleware_setup_zle commands_middleware_restore commands_middleware_init commands_middleware_reload aws_middleware aws_fix_s3_uri aws_session_valid aws_refresh_session aws_mw_debug &>/dev/null
-
-source $HOME/.dotfiles/zsh/commands-middleware.zsh

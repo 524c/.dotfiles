@@ -116,11 +116,12 @@ k8s_environment_validation_middleware() {
 
   if [[ "$folder_env" != "$context_env" ]]; then
     {
-      echo "❌ ERROR: Environment mismatch!" >&2
+      echo " ❌ Environment mismatch!" >&2
       echo "   Command: kubectl $cmd_type -k $folder" >&2
       echo "   Folder environment: $folder_env" >&2
       echo "   Current context environment: $context_env" >&2
       echo "   Command blocked to prevent accidental deployment to wrong environment." >&2
+      echo "" >&2
     }
     return 1
   fi
@@ -129,5 +130,5 @@ k8s_environment_validation_middleware() {
   return 0
 }
 
-# Register this middleware
-commands_middleware_register "k8s_environment_validation_middleware"
+# Register with the new plugin system - K8s command patterns
+plugin_register "k8s_environment_validation_middleware" "kubectl*-k* k*-k* *kubectl*-k* *k*-k*"

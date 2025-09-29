@@ -11,24 +11,28 @@ DEFAULT_AWS_REGION="us-east-1"
 
 # Available contexts definition
 # Format: "cluster_name|state_store|aws_profile|display_name"
-declare -A K8S_CONTEXTS=(
-    ["stg"]="stg.k8s.multpex.com.br|s3://state.devops.multpex.com.br|multpex-devops|Staging Cluster"
-    ["prd"]="prd.k8s.multpex.com.br|s3://state.multpex.com.br|multpex-prd|Production Cluster"
-)
+# Ensure arrays are properly initialized in global scope
+if [[ -z "${K8S_CONTEXTS[stg]}" ]]; then
+    typeset -gA K8S_CONTEXTS
+    K8S_CONTEXTS[stg]="stg.k8s.multpex.com.br|s3://state.devops.multpex.com.br|multpex-devops|Staging Cluster"
+    K8S_CONTEXTS[prd]="prd.k8s.multpex.com.br|s3://state.multpex.com.br|multpex-prd|Production Cluster"
+fi
 
 # Context aliases - point to existing context keys
-declare -A K8S_ALIASES=(
-    ["staging"]="stg"
-    ["prod"]="prd"
-)
+if [[ -z "${K8S_ALIASES[staging]}" ]]; then
+    typeset -gA K8S_ALIASES
+    K8S_ALIASES[staging]="stg"
+    K8S_ALIASES[prod]="prd"
+fi
 
 # Alias mapping to main contexts (for state saving)
-declare -A K8S_CONTEXT_MAPPING=(
-    ["stg"]="staging"
-    ["staging"]="staging"
-    ["prd"]="production"
-    ["prod"]="production"
-)
+if [[ -z "${K8S_CONTEXT_MAPPING[stg]}" ]]; then
+    typeset -gA K8S_CONTEXT_MAPPING
+    K8S_CONTEXT_MAPPING[stg]="staging"
+    K8S_CONTEXT_MAPPING[staging]="staging"
+    K8S_CONTEXT_MAPPING[prd]="production"
+    K8S_CONTEXT_MAPPING[prod]="production"
+fi
 
 # ============================================================================
 # INTERNAL FUNCTIONS
@@ -318,7 +322,10 @@ _k8s_completion() {
     _describe 'contexts' contexts
 }
 
-compdef _k8s_completion k8s
+# Setup completion if compdef is available
+if command -v compdef >/dev/null 2>&1; then
+    compdef _k8s_completion k8s
+fi
 
 # ============================================================================
 # INITIALIZATION

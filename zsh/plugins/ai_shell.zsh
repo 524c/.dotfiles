@@ -186,6 +186,53 @@ ai_process_command_zle() {
     zle redisplay
 }
 
+# Non-executing version for plugins router system
+ai_process_command_zle_non_executing() {
+    local user_input="$1"
+    local original_buffer="$2"
+    
+    # Extract the actual user input (remove # prefix)
+    user_input="${user_input#\#}"
+    user_input="${user_input#"${user_input%%[![:space:]]*}"}"
+    
+    # If empty, restore original buffer
+    if [[ -z "$user_input" ]]; then
+        BUFFER="$original_buffer"
+        CURSOR=${#BUFFER}
+        zle redisplay
+        return 1
+    fi
+    
+    # Show simple loading indicator
+    BUFFER="$original_buffer 🤖"
+    CURSOR=${#BUFFER}
+    zle redisplay
+    
+    # Call AI processing (non-ZLE version)
+    local command_result
+    command_result=$(ai_process_command "#$user_input")
+    
+    # Clear loading indicator
+    BUFFER=""
+    zle redisplay
+    
+    # Check if we got a valid result
+    if [[ -n "$command_result" && "$command_result" != "#$user_input" ]]; then
+        # Update buffer with generated command (don't execute)
+        BUFFER="$command_result"
+        CURSOR=${#BUFFER}
+        zle redisplay
+        
+        # Add original comment to history
+        print -s "$original_buffer"
+    else
+        # Restore original buffer if AI processing failed
+        BUFFER="$original_buffer"
+        CURSOR=${#BUFFER}
+        zle redisplay
+    fi
+}
+
 # Function to change animation style
 ai_animation_style() {
     local style="$1"
@@ -239,13 +286,92 @@ ai_command_info() {
     echo "Press Enter and the command will be generated!"
 }
 
-# Register ZLE widget and bind to Enter key
-zle -N ai_accept_line
-bindkey '^M' ai_accept_line
+# Note: ZLE widget registration and key binding now handled by plugins_loader.zsh
+# The plugins_loader automatically patches ai_accept_line when AI shell is detected
 
 # Useful aliases
 alias ai-info='ai_command_info'
 alias ai-animation='ai_animation_style'
+
+# Function to process AI commands (non-ZLE version for plugins system)
+ai_process_command() {
+    local user_input="$1"
+    local command_result=""
+    
+    # Remove # prefix if present
+    user_input="${user_input#\#}"
+    user_input="${user_input#"${user_input%%[![:space:]]*}"}"
+    
+    # If empty, return original
+    if [[ -z "$user_input" ]]; then
+        echo "$1"
+        return 1
+    fi
+    
+    # Call appropriate API based on configuration
+    case "$AI_PROVIDER" in
+        "openai")
+            if [[ -z "$API_KEY" ]]; then
+                echo "# Error: OPENAI_API_KEY not configured"
+                return 1
+            fi
+            command_result=$(_call_openai "$user_input")
+            ;;
+        "anthropic")
+            if [[ -z "$ANTHROPIC_API_KEY" ]]; then
+                echo "# Error: ANTHROPIC_API_KEY not configured"
+                return 1
+            fi
+            command_result=$(_call_anthropic "$user_input")
+            ;;
+        "ollama")
+            command_result=$(_call_ollama "$user_input")
+            ;;
+        *)
+            echo "# Error: Invalid AI_PROVIDER. Use: openai, anthropic, or ollama"
+            return 1
+            ;;
+    esac
+    
+    # Check if there was an error in API call
+    if [[ $? -ne 0 ]] || [[ -z "$command_result" ]] || [[ "$command_result" == "null" ]]; then
+        echo "# Error calling AI API. Check your configuration."
+        return 1
+    fi
+    
+    # Clean and return the command
+    local clean_command=$(_clean_command "$command_result")
+    if [[ -n "$clean_command" ]]; then
+        echo "$clean_command"
+    else
+        echo "$1"  # Return original if cleaning failed
+    fi
+}
+
+# AI Shell function for plugins system compatibility
+ai_shell_function() {
+    local command="$1"
+    
+    # Only process commands that start with #
+    if [[ "$command" == "#"* ]]; then
+        # For AI commands, we want to update the buffer but NOT execute
+        # So we return a special signal that tells the plugins system to update buffer only
+        echo "BUFFER_UPDATE_ONLY:$command"
+        return 0
+    fi
+    
+    # Return original command unchanged if no AI processing needed
+    echo "$command"
+}
+
+# Register with plugins system for router-based command interception
+if declare -f plugin_register >/dev/null 2>&1; then
+    # Register function to handle commands starting with #
+    plugin_register "ai_shell_function" "#*"
+    [[ -n "$ZSH_AI_PLUGIN_VERBOSE" ]] && echo "[AI Shell] Registered with plugins router: #*" >&2
+else
+    [[ -n "$ZSH_AI_PLUGIN_VERBOSE" ]] && echo "[AI Shell] plugin_register function not available" >&2
+fi
 
 # Initialization message
 if [[ "$ZSH_AI_PLUGIN_VERBOSE" == "1" ]]; then

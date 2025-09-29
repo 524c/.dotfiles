@@ -1,15 +1,17 @@
 # AWS Middleware - Validates AWS session and corrects S3 URIs
+# Configuration:
+# - AWS_MIDDLEWARE_DEBUG=1: Enable debug logging
 
-# AWS middleware - Session validation and S3 URI correction (instrumented v1.7)
+# AWS middleware - Session validation and S3 URI correction (v1.14 - Silent Visual Updates)
 aws_middleware() {
-  [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] aws_middleware called with: '$1'" >&2
   local command="$1"
-  aws_mw_debug "middleware invoked with command='$command'"
+  debug "middleware invoked with command='$command'"
 
-  # Split the line into tokens respecting quotes
+  # Split the line into tokens respecting quotes (defensive)
   local -a words
-  words=(${(z)command})
-  aws_mw_debug "tokenized: ${words[*]}"
+  { words=(${(z)command}) } 2>/dev/null || return 0
+  (( ${#words[@]} )) || return 0
+  debug "tokenized: ${words[*]}"
 
   # Ignore prefixed environment assignments (FOO=bar AWS_REGION=us-east-1 aws s3 ls)
   local first_word=""
@@ -24,23 +26,92 @@ aws_middleware() {
     fi
   done
 
-  [[ "$first_word" == "aws" ]] || { aws_mw_debug "first word '$first_word' != aws, exiting"; return; }
-  aws_mw_debug "detected aws command starting at index=$aws_cmd_start"
+  [[ "$first_word" == "aws" ]] || { debug "first word '$first_word' != aws, exiting"; return; }
+  debug "detected aws command starting at index=$aws_cmd_start"
 
-  # Check and fix S3 URI format
+  # Detect and handle aws sso logout command - clear all caches
+  if (( aws_cmd_start + 2 <= ${#words[@]} )) && 
+     [[ "${words[$((aws_cmd_start+1))]}" == "sso" ]] && 
+     [[ "${words[$((aws_cmd_start+2))]}" == "logout" ]]; then
+    echo "[AWS] Executing SSO logout and clearing all session caches..." >&2
+    
+    # Temporarily disable Starship AWS module to prevent auto-login (if Starship is present)
+    local original_starship_config=""
+    local starship_disabled=false
+    
+    # Check if Starship is available and configured
+    if command -v starship >/dev/null 2>&1 && [[ -n "$STARSHIP_CONFIG" || -f "$HOME/.config/starship.toml" ]]; then
+      debug "Starship detected - temporarily disabling AWS module during logout"
+      original_starship_config="$STARSHIP_CONFIG"
+      export STARSHIP_CONFIG=/dev/null
+      starship_disabled=true
+    else
+      debug "Starship not detected or not configured - proceeding with standard logout"
+    fi
+    
+    # Execute logout first
+    /opt/homebrew/bin/aws "${words[@]:$aws_cmd_start}"
+    local logout_result=$?
+    
+    # Clear all profile-specific caches after logout completes
+    local cache_base="/tmp/aws_session_cache_$(whoami)_"
+    local cleared_count=0
+    
+    # Use a more reliable method to find and remove cache files
+    for cache_file in /tmp/aws_session_cache_$(whoami)_*; do
+      if [[ -f "$cache_file" ]]; then
+        rm -f "$cache_file"
+        ((cleared_count++))
+        debug "cleared cache: $cache_file"
+      fi
+    done
+    
+    if (( cleared_count > 0 )); then
+      echo "[commands-middleware][aws] cleared $cleared_count session cache(s) after logout" >&2
+    else
+      debug "no session caches found to clear"
+    fi
+    
+    # Restore Starship config only if we disabled it
+    if [[ "$starship_disabled" == true ]]; then
+      if [[ -n "$original_starship_config" ]]; then
+        export STARSHIP_CONFIG="$original_starship_config"
+        debug "Starship config restored to: $STARSHIP_CONFIG"
+      else
+        unset STARSHIP_CONFIG
+        debug "Starship config unset (was not originally set)"
+      fi
+    fi
+    
+    return $logout_result
+  fi
+
+  # ALWAYS check session validity first, regardless of URI correction
+  local session_refreshed=false
+  if ! aws_session_valid; then
+    echo "[commands-middleware][aws] expired session – refreshing..." >&2
+    debug "session invalid triggering refresh"
+    if aws_refresh_session; then
+      session_refreshed=true
+      debug "session refresh successful"
+    else
+      echo "[commands-middleware][aws] failed to refresh session" >&2
+      debug "session refresh failed"
+      return 1
+    fi
+  fi
+
+   # Check and fix S3 URI format
    local corrected_command
-   if corrected_command=$(aws_fix_s3_uri words aws_cmd_start); then
-     [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws] corrected S3 URI" >&2
-     aws_mw_debug "corrected command: '$corrected_command'"
-     # In ZLE context, modify BUFFER; otherwise return the command for wrapper
-     if [[ -n "$BUFFER" ]]; then
-       BUFFER="$corrected_command"
-     fi
-     # Always return the corrected command for wrapper function
+    # Only attempt URI correction for commands that actually supply bucket/objects
+     if corrected_command=$(aws_fix_s3_uri words $aws_cmd_start 2>/dev/null); then
+      debug "corrected S3 URI - command: '$corrected_command'"
+     
+     # Return the corrected command - buffer update will be handled by main system
      echo "$corrected_command"
      return 0
    fi
-  aws_mw_debug "no URI correction applied"
+  debug "no URI correction applied"
 
   # S3 mb / rb guard: ensure we did not erroneously prepend anything
   if (( aws_cmd_start + 1 <= ${#words[@]} )) && [[ "${words[$((aws_cmd_start+1))]}" == "s3" ]]; then
@@ -48,25 +119,20 @@ aws_middleware() {
       local _act="${words[$((aws_cmd_start+2))]}"
       if [[ "$_act" == "mb" || "$_act" == "rb" ]]; then
         # Sanity check: show tokens
-        aws_mw_debug "sanity guard for action $_act tokens='${words[*]}'"
+        debug "sanity guard for action $_act tokens='${words[*]}'"
       fi
     fi
   fi
-
-  # Invalid session -> refresh before executing real command
-  if ! aws_session_valid; then
-    echo "[commands-middleware][aws] expired session – refreshing..." >&2
-    aws_mw_debug "session invalid triggering refresh"
-    aws_refresh_session || {
-      echo "[commands-middleware][aws] failed to refresh session" >&2
-      aws_mw_debug "session refresh failed"
-    }
-  fi
+  
+  # No correction needed, do not echo original (noise reduction)
+  debug "no correction needed; not echoing original"
+  return 0
 }
 
 # Check if AWS credentials are valid (with timestamp caching)
 aws_session_valid() {
-  local cache_file="/tmp/aws_session_cache_$(whoami)"
+  local profile_suffix="${AWS_PROFILE:-default}"
+  local cache_file="/tmp/aws_session_cache_$(whoami)_${profile_suffix}"
   local cache_duration=3600  # 1 hour in seconds
 
   # Check if cache file exists and is recent
@@ -94,18 +160,20 @@ aws_session_valid() {
 
 # Refresh AWS session
 aws_refresh_session() {
-  local cache_file="/tmp/aws_session_cache_$(whoami)"
+  local profile_suffix="${AWS_PROFILE:-default}"
+  local cache_file="/tmp/aws_session_cache_$(whoami)_${profile_suffix}"
 
   # Remove cache before refresh
   rm -f "$cache_file" 2>/dev/null
 
   # Simple session refresh - extend as needed
+  # CRITICAL FIX: Redirect output to stderr to prevent eval of SSO messages
   if command -v aws-sso >/dev/null 2>&1; then
-    aws-sso login
+    aws-sso login >&2
   elif [[ -n "$AWS_PROFILE" ]]; then
-    /opt/homebrew/bin/aws sso login --profile "$AWS_PROFILE"
+    /opt/homebrew/bin/aws sso login --profile "$AWS_PROFILE" >&2
   else
-    /opt/homebrew/bin/aws sso login
+    /opt/homebrew/bin/aws sso login >&2
   fi
 
   # If refresh was successful, update cache
@@ -114,11 +182,18 @@ aws_refresh_session() {
   fi
 }
 
-# Fix S3 URI format in AWS commands - FIXED: rb command excluded from URI correction (instrumented v1.7)
-# Debug logging: export AWS_MIDDLEWARE_DEBUG=1 to enable verbose output
-aws_mw_debug() { [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && print -u2 "[commands-middleware][aws][debug] $*"; }
+# Fix S3 URI format in AWS commands - FIXED: Session validation always runs + SSO output redirect + UX improvements (instrumented v1.12)
+# Debug logging now handled by utils.zsh debug() function
 
 aws_fix_s3_uri() {
+  # Defensive: require passed array name and start index
+  if (( $# < 2 )); then
+    return 1
+  fi
+  # Validate referenced array has content
+  local __arr_size
+  eval '__arr_size=${#'$1'[@]}'
+  (( __arr_size > 0 )) || return 1
   local words_var=$1
   local aws_start=$2
 
@@ -127,25 +202,25 @@ aws_fix_s3_uri() {
   local -a fixed_words=("${words[@]}")
   local changed=false
 
-  aws_mw_debug "entered aws_fix_s3_uri; aws_start=$aws_start raw_command='${words[*]}'"
+  debug "entered aws_fix_s3_uri; aws_start=$aws_start raw_command='${words[*]}'"
 
   # Check if this is an S3 command (zsh arrays are 1-indexed)
   if (( aws_start + 1 <= ${#words[@]} )) && [[ "${words[$((aws_start+1))]}" == "s3" ]]; then
-    aws_mw_debug "detected s3 subcommand"
+    debug "detected s3 subcommand"
     # S3 commands that typically need URI correction
     if (( aws_start + 2 <= ${#words[@]} )); then
       local s3_action="${words[$((aws_start+2))]}"
-      aws_mw_debug "s3_action=$s3_action"
+      debug "s3_action=$s3_action"
 
       # NOTE: Previous assumption that mb/rb must not be modified was WRONG.
       # aws s3 mb|rb actually REQUIRE an s3:// URI. We now auto-prefix them.
       case "$s3_action" in
         mb|rb)
-          aws_mw_debug "processing bucket create/delete action $s3_action"
+          debug "processing bucket create/delete action $s3_action"
           # mb / rb require bucket ARG as s3://bucket
           for i in $(seq $((aws_start + 3)) ${#words[@]}); do
             local arg="${words[i]}"
-            aws_mw_debug "$s3_action arg index=$i value='$arg'"
+            debug "$s3_action arg index=$i value='$arg'"
             [[ "$arg" =~ ^- ]] && continue
             [[ "$arg" =~ ^s3:// ]] && continue
             # Strip matching surrounding quotes if present
@@ -160,30 +235,30 @@ aws_fix_s3_uri() {
             # bucket names only (no slashes) using stripped value
             if [[ "$stripped" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] && [[ ${#stripped} -ge 3 ]] && [[ ${#stripped} -le 63 ]]; then
               fixed_words[i]="s3://$stripped"
-              aws_mw_debug "added prefix to bucket '$arg' (stripped='$stripped') for $s3_action"
+              debug "added prefix to bucket '$arg' (stripped='$stripped') for $s3_action"
               changed=true
               break
             fi
           done
           ;;
         cp|mv|sync|ls)
-          aws_mw_debug "processing action $s3_action"
+          debug "processing action $s3_action"
           # Note: mb/rb handled separately above
           # Check arguments for bucket names that should be s3:// URIs
           for i in $(seq $((aws_start + 3)) ${#words[@]}); do
             local arg="${words[i]}"
             local prev_index=$((i-1))
             local prev="${words[prev_index]}"
-            aws_mw_debug "arg index=$i value='$arg' prev='$prev'"
+            debug "arg index=$i value='$arg' prev='$prev'"
 
             # Skip if already has s3:// prefix or is a flag itself
-            if [[ "$arg" =~ ^s3:// ]]; then aws_mw_debug "skip already prefixed"; continue; fi
-            if [[ "$arg" =~ ^- ]]; then aws_mw_debug "skip flag"; continue; fi
+            if [[ "$arg" =~ ^s3:// ]]; then debug "skip already prefixed"; continue; fi
+            if [[ "$arg" =~ ^- ]]; then debug "skip flag"; continue; fi
             # Skip if this is the value of a preceding flag (e.g. --region us-east-1)
-            if [[ "$prev" =~ ^- && "$prev" != *=* ]]; then aws_mw_debug "skip flag value for $prev"; continue; fi
+            if [[ "$prev" =~ ^- && "$prev" != *=* ]]; then debug "skip flag value for $prev"; continue; fi
 
             # Skip local filesystem paths (starts with ./ or /)
-            if [[ "$arg" =~ ^\.?/ ]]; then aws_mw_debug "skip local path (starts with ./ or /)"; continue; fi
+            if [[ "$arg" =~ ^\.?/ ]]; then debug "skip local path (starts with ./ or /)"; continue; fi
 
             # Handle quoted buckets/paths
             local stripped="$arg" had_quotes=0
@@ -196,7 +271,7 @@ aws_fix_s3_uri() {
             if [[ "$stripped" != */* ]]; then
               local extension="${stripped##*.}"
               if [[ "$extension" != "$stripped" ]] && [[ ${#extension} -ge 1 ]] && [[ ${#extension} -le 4 ]] && [[ "$extension" =~ ^[a-zA-Z]+$ ]]; then
-                aws_mw_debug "skip local file candidate (extension=$extension)"
+                debug "skip local file candidate (extension=$extension)"
                 continue
               fi
             fi
@@ -204,39 +279,39 @@ aws_fix_s3_uri() {
             # Bare bucket
             if [[ "$stripped" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] && [[ ${#stripped} -ge 3 ]] && [[ ${#stripped} -le 63 ]]; then
               fixed_words[i]="s3://$stripped"
-              aws_mw_debug "added prefix to bare bucket '$arg' (stripped='$stripped')"
+              debug "added prefix to bare bucket '$arg' (stripped='$stripped')"
               changed=true
             # bucket/path
             elif [[ "$stripped" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]/.+ ]]; then
               fixed_words[i]="s3://$stripped"
-              aws_mw_debug "added prefix to bucket/path '$arg' (stripped='$stripped')"
+              debug "added prefix to bucket/path '$arg' (stripped='$stripped')"
               changed=true
             else
-              aws_mw_debug "no match rules for '$arg'"
+              debug "no match rules for '$arg'"
             fi
           done
           ;;
         rm)
-          aws_mw_debug "processing action rm"
+          debug "processing action rm"
           # Special handling for 'rm' - add s3:// prefix only for bucket/path, not bare bucket names
           for i in $(seq $((aws_start + 3)) ${#words[@]}); do
             local arg="${words[i]}"
-            aws_mw_debug "rm arg index=$i value='$arg'"
+            debug "rm arg index=$i value='$arg'"
 
             # Skip if already has s3:// prefix or is a flag
-            if [[ "$arg" =~ ^s3:// ]]; then aws_mw_debug "skip already prefixed"; continue; fi
-            if [[ "$arg" =~ ^- ]]; then aws_mw_debug "skip flag"; continue; fi
+            if [[ "$arg" =~ ^s3:// ]]; then debug "skip already prefixed"; continue; fi
+            if [[ "$arg" =~ ^- ]]; then debug "skip flag"; continue; fi
 
             # Reordered logic for rm:
             # 1. Skip explicit filesystem paths starting with ./ or /
             # 2. If bucket/path pattern (contains slash) add prefix (even if object has extension)
             # 3. Apply local file heuristic ONLY when no slash present
-            if [[ "$arg" =~ ^\.?/ ]]; then aws_mw_debug "skip path (starts with ./ or /)"; continue; fi
+            if [[ "$arg" =~ ^\.?/ ]]; then debug "skip path (starts with ./ or /)"; continue; fi
 
             # bucket/path pattern (must have slash and content after)
             if [[ "$arg" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]/.+ ]]; then
               fixed_words[i]="s3://$arg"
-              aws_mw_debug "added prefix to rm target '$arg'"
+              debug "added prefix to rm target '$arg'"
               changed=true
               continue
             fi
@@ -245,13 +320,13 @@ aws_fix_s3_uri() {
             if [[ "$arg" != */* ]]; then
               local extension="${arg##*.}"
               if [[ "$extension" != "$arg" ]] && [[ ${#extension} -ge 1 ]] && [[ ${#extension} -le 4 ]] && [[ "$extension" =~ ^[a-zA-Z]+$ ]]; then
-                aws_mw_debug "skip local file (extension=$extension)"
+                debug "skip local file (extension=$extension)"
                 continue
               fi
             fi
 
             # At this point leave bare bucket unchanged (could be bucket delete intent)
-            aws_mw_debug "rm leaving arg unchanged '$arg'"
+            debug "rm leaving arg unchanged '$arg'"
             # Do NOT add s3:// for bare bucket names in 'rm' command (could be bucket deletion)
           done
           ;;
@@ -262,10 +337,10 @@ aws_fix_s3_uri() {
   if [[ "$changed" == "true" ]]; then
     # Return corrected command via stdout
     print -n "${fixed_words[*]}"
-    aws_mw_debug "final corrected command='${fixed_words[*]}'"
+    debug "final corrected command='${fixed_words[*]}'"
     return 0
   fi
-  aws_mw_debug "no changes applied"
+  debug "no changes applied"
   return 1
 }
 
@@ -364,40 +439,43 @@ is_delete_command() {
   return 1
 }
 
-# Register this middleware
-[[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[DIAGNOSTIC] aws.zsh: Registering aws_middleware"
-commands_middleware_register "aws_middleware"
+# Register with the new plugin system - AWS command patterns
+debug "aws.zsh: Registering aws_middleware with routing patterns"
+plugin_register "aws_middleware" "aws*"
 
-# Also define an aws wrapper function for direct command interception
-aws() {
-  [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] aws wrapper called with: $*" >&2
+# AWS wrapper function disabled - using ZLE integration for visual buffer updates
+# aws() {
+#   [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] aws wrapper called with: $*" >&2
+#
+#   # Call middleware with the full command (prepend 'aws')
+#   local full_command="aws $*"
+#   local middleware_output
+#   if middleware_output=$(aws_middleware "$full_command"); then
+#     # If middleware returned a corrected command, execute it directly
+#     if [[ -n "$middleware_output" && "$middleware_output" != "$full_command" ]]; then
+#       # Replace 'aws' with full path to avoid function recursion
+#       local corrected_command="${middleware_output/#aws//opt/homebrew/bin/aws}"
+#       exec_cmd="$corrected_command"
+#     else
+#       exec_cmd="/opt/homebrew/bin/aws $@"
+#     fi
+#   else
+#     exec_cmd="/opt/homebrew/bin/aws $@"
+#   fi
 
-  # Call middleware with the full command (prepend 'aws')
-  local full_command="aws $*"
-  local middleware_output
-  if middleware_output=$(aws_middleware "$full_command"); then
-    # If middleware returned a corrected command, execute it directly
-    if [[ -n "$middleware_output" && "$middleware_output" != "$full_command" ]]; then
-      # Replace 'aws' with full path to avoid function recursion
-      local corrected_command="${middleware_output/#aws//opt/homebrew/bin/aws}"
-      exec_cmd="$corrected_command"
-    else
-      exec_cmd="/opt/homebrew/bin/aws $@"
-    fi
-  else
-    exec_cmd="/opt/homebrew/bin/aws $@"
-  fi
+#   # Check for delete operations and prompt for confirmation
+#   if is_delete_command "$exec_cmd"; then
+#     echo -n "Are you sure you want to delete? (y/N) "
+#     read response
+#     if [[ "$response" != "y" && "$response" != "Y" ]]; then
+#       return 1
+#     fi
+#   fi
+#
+#   # Execute the command
+#   [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] executing command: $exec_cmd" >&2
+#   eval "$exec_cmd"
+# }
 
-  # Check for delete operations and prompt for confirmation
-  if is_delete_command "$exec_cmd"; then
-    echo -n "Are you sure you want to delete? (y/N) "
-    read -q response
-    if [[ "$response" != "y" && "$response" != "Y" ]]; then
-      return 1
-    fi
-  fi
-
-  # Execute the command
-  [[ -n "$AWS_MIDDLEWARE_DEBUG" ]] && echo "[commands-middleware][aws][debug] executing command: $exec_cmd" >&2
-  eval "$exec_cmd"
-}
+# Ensure AWS wrapper function is not active (force use of ZLE integration)
+unfunction aws 2>/dev/null || true
