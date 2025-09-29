@@ -138,11 +138,12 @@ aws_middleware() {
      # S3 URI correction for substitutions would need special handling, but it's rare
      # Most substitutions are for describe/get operations, not S3 operations
      
-     # For EC2 describe-instances and similar, no correction needed
-     if [[ "$substitution_token" == *"ec2"* || "$substitution_token" == *"sts"* || "$substitution_token" == *"iam"* ]]; then
-       debug "AWS service command in substitution (ec2/sts/iam) - no correction needed"
-       return 0
-     fi
+      # For EC2 describe-instances and similar, no correction needed
+      if [[ "$substitution_token" == *"ec2"* || "$substitution_token" == *"sts"* || "$substitution_token" == *"iam"* ]]; then
+        debug "AWS service command in substitution (ec2/sts/iam) - no correction needed"
+        echo "$command"
+        return 0
+      fi
      
       # For S3 commands in substitution, attempt correction (advanced case)
       if [[ "$substitution_token" == *"s3"* ]]; then
@@ -223,7 +224,7 @@ aws_session_valid() {
   fi
 
   # Cache expired or doesn't exist - check actual AWS session
-  if /opt/homebrew/bin/aws sts get-caller-identity &>/dev/null; then
+  if aws sts get-caller-identity &>/dev/null; then
     # Session is valid - update cache
     date +%s > "$cache_file"
     return 0
@@ -331,7 +332,8 @@ aws_fix_s3_uri() {
             if [[ "$arg" =~ ^s3:// ]]; then debug "skip already prefixed"; continue; fi
             if [[ "$arg" =~ ^- ]]; then debug "skip flag"; continue; fi
             # Skip if this is the value of a preceding flag (e.g. --region us-east-1)
-            if [[ "$prev" =~ ^- && "$prev" != *=* ]]; then debug "skip flag value for $prev"; continue; fi
+            # Exception: '-' (stdin/stdout) is not a flag that takes values
+            if [[ "$prev" =~ ^- && "$prev" != *=* && "$prev" != "-" ]]; then debug "skip flag value for $prev"; continue; fi
 
             # Skip local filesystem paths (starts with ./ or /)
             if [[ "$arg" =~ ^\.?/ ]]; then debug "skip local path (starts with ./ or /)"; continue; fi
